@@ -8,7 +8,7 @@
 #   - Creates necessary data directories
 #
 # After running this script, you can start services with:
-#   docker-compose up -d
+#   docker compose up -d
 # =============================================================================
 
 set -e
@@ -20,8 +20,11 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# GitHub raw content base URL
-GITHUB_RAW_URL="https://raw.githubusercontent.com/Wei-Shaw/sub2api/main/deploy"
+# GitHub deploy source. Override these when reusing the script from another fork:
+#   GITHUB_REPO=owner/repo GITHUB_REF=branch ./docker-deploy.sh
+GITHUB_REPO="${GITHUB_REPO:-linyqh/sub2api-simplify}"
+GITHUB_REF="${GITHUB_REF:-main}"
+GITHUB_RAW_URL="https://raw.githubusercontent.com/${GITHUB_REPO}/${GITHUB_REF}/deploy"
 
 # Print colored message
 print_info() {
@@ -57,6 +60,7 @@ main() {
     echo "  Sub2API Deployment Preparation"
     echo "=========================================="
     echo ""
+    print_info "Using deployment files from ${GITHUB_REPO}@${GITHUB_REF}"
 
     # Check if openssl is available
     if ! command_exists openssl; then
@@ -154,10 +158,10 @@ main() {
     echo "Next steps:"
     echo "  1. (Optional) Edit .env to customize configuration"
     echo "  2. Start services:"
-    echo "     docker-compose up -d"
+    echo "     docker compose up -d"
     echo ""
     echo "  3. View logs:"
-    echo "     docker-compose logs -f sub2api"
+    echo "     docker compose logs -f sub2api"
     echo ""
     echo "  4. Access Web UI:"
     echo "     http://localhost:8080"
