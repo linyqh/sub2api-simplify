@@ -2,14 +2,17 @@ package admin
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -18,8 +21,13 @@ import (
 // GroupHandler handles admin group management
 type GroupHandler struct {
 	adminService         service.AdminService
-	dashboardService     *service.DashboardService
+	dashboardService     groupDashboardService
 	groupCapacityService *service.GroupCapacityService
+}
+
+type groupDashboardService interface {
+	GetGroupStatsWithFilters(ctx context.Context, startTime, endTime time.Time, userID, apiKeyID, accountID, groupID int64, requestType *int16, stream *bool, billingType *int8) ([]usagestats.GroupStat, error)
+	GetGroupUsageSummary(ctx context.Context, todayStart time.Time) ([]usagestats.GroupUsageSummary, error)
 }
 
 type optionalLimitField struct {
@@ -350,14 +358,77 @@ func (h *GroupHandler) GetStats(c *gin.Context) {
 		return
 	}
 
-	// Return mock data for now
+	totalAPIKeys, activeAPIKeys, err := h.loadGroupAPIKeyStats(c.Request.Context(), groupID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	var totalRequests int64
+	var totalCost float64
+	if h.dashboardService != nil {
+		stats, err := h.dashboardService.GetGroupStatsWithFilters(
+			c.Request.Context(),
+			time.Unix(0, 0).UTC(),
+			time.Now().UTC().Add(time.Second),
+			0,
+			0,
+			0,
+			groupID,
+			nil,
+			nil,
+			nil,
+		)
+		if err != nil {
+			response.Error(c, 500, "Failed to get group statistics")
+			return
+		}
+		for _, stat := range stats {
+			if stat.GroupID == groupID {
+				totalRequests = stat.Requests
+				totalCost = stat.Cost
+				break
+			}
+		}
+	}
+
 	response.Success(c, gin.H{
-		"total_api_keys":  0,
-		"active_api_keys": 0,
-		"total_requests":  0,
-		"total_cost":      0.0,
+		"total_api_keys":  totalAPIKeys,
+		"active_api_keys": activeAPIKeys,
+		"total_requests":  totalRequests,
+		"total_cost":      totalCost,
 	})
-	_ = groupID // TODO: implement actual stats
+}
+
+func (h *GroupHandler) loadGroupAPIKeyStats(ctx context.Context, groupID int64) (int64, int64, error) {
+	const pageSize = 500
+
+	var (
+		page          = 1
+		totalAPIKeys  int64
+		activeAPIKeys int64
+		fetched       int64
+	)
+
+	for {
+		keys, total, err := h.adminService.GetGroupAPIKeys(ctx, groupID, page, pageSize)
+		if err != nil {
+			return 0, 0, err
+		}
+		totalAPIKeys = total
+		for i := range keys {
+			if keys[i].Status == service.StatusActive {
+				activeAPIKeys++
+			}
+		}
+		fetched += int64(len(keys))
+		if fetched >= totalAPIKeys || len(keys) == 0 {
+			break
+		}
+		page++
+	}
+
+	return totalAPIKeys, activeAPIKeys, nil
 }
 
 // GetUsageSummary returns today's and cumulative cost for all groups.

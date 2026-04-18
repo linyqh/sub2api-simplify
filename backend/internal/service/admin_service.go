@@ -27,7 +27,6 @@ type AdminService interface {
 	UpdateUser(ctx context.Context, id int64, input *UpdateUserInput) (*User, error)
 	DeleteUser(ctx context.Context, id int64) error
 	GetUserAPIKeys(ctx context.Context, userID int64, page, pageSize int, sortBy, sortOrder string) ([]APIKey, int64, error)
-	GetUserUsageStats(ctx context.Context, userID int64, period string) (any, error)
 
 	// Group management
 	ListGroups(ctx context.Context, page, pageSize int, platform, status, search string, isExclusive *bool, sortBy, sortOrder string) ([]Group, int64, error)
@@ -648,17 +647,6 @@ func (s *adminServiceImpl) GetUserAPIKeys(ctx context.Context, userID int64, pag
 		return nil, 0, err
 	}
 	return keys, result.Total, nil
-}
-
-func (s *adminServiceImpl) GetUserUsageStats(ctx context.Context, userID int64, period string) (any, error) {
-	// Return mock data for now
-	return map[string]any{
-		"period":          period,
-		"total_requests":  0,
-		"total_cost":      0.0,
-		"total_tokens":    0,
-		"avg_duration_ms": 0,
-	}, nil
 }
 
 // Group management implementations

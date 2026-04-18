@@ -39,6 +39,8 @@
                 ? 'sidebar-channel-manage'
                 : item.path === '/admin/groups'
                   ? 'sidebar-group-manage'
+                  : item.path === '/admin/proxies'
+                    ? 'sidebar-proxy-manage'
                   : undefined
             "
             @click="handleMenuItemClick(item.path)"
@@ -284,6 +286,26 @@ const GlobeIcon = {
     )
 }
 
+const ServerStackIcon = {
+  render: () =>
+    h(
+      'svg',
+      { fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', 'stroke-width': '1.5' },
+      [
+        h('path', {
+          'stroke-linecap': 'round',
+          'stroke-linejoin': 'round',
+          d: 'M3.75 6.75A2.25 2.25 0 016 4.5h12a2.25 2.25 0 012.25 2.25v1.5A2.25 2.25 0 0118 10.5H6a2.25 2.25 0 01-2.25-2.25v-1.5zM3.75 15.75A2.25 2.25 0 016 13.5h12a2.25 2.25 0 012.25 2.25v1.5A2.25 2.25 0 0118 19.5H6a2.25 2.25 0 01-2.25-2.25v-1.5z'
+        }),
+        h('path', {
+          'stroke-linecap': 'round',
+          'stroke-linejoin': 'round',
+          d: 'M7.5 7.5h.008v.008H7.5V7.5zm0 9h.008v.008H7.5V16.5zm3.75-9h5.25m-5.25 9h5.25'
+        })
+      ]
+    )
+}
+
 const CogIcon = {
   render: () =>
     h(
@@ -393,6 +415,7 @@ const adminNavItems = computed(
     { path: '/admin/groups', label: t('nav.groups'), icon: FolderIcon },
     { path: '/admin/subscriptions', label: t('nav.subscriptions'), icon: CreditCardIcon },
     { path: '/admin/accounts', label: t('nav.accounts'), icon: GlobeIcon },
+    { path: '/admin/proxies', label: t('nav.proxies'), icon: ServerStackIcon },
     { path: '/admin/usage', label: t('nav.usage'), icon: ChartIcon },
     { path: '/admin/settings', label: t('nav.settings'), icon: CogIcon },
   ]
@@ -423,6 +446,7 @@ function handleMenuItemClick(itemPath: string) {
   const pathToSelector: Record<string, string> = {
     '/admin/groups': '#sidebar-group-manage',
     '/admin/accounts': '#sidebar-channel-manage',
+    '/admin/proxies': '#sidebar-proxy-manage',
     '/keys': '[data-tour="sidebar-my-keys"]'
   }
 

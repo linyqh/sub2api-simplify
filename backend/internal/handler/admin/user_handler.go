@@ -1,11 +1,14 @@
 package admin
 
 import (
+	"context"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -21,13 +24,19 @@ type UserWithConcurrency struct {
 type UserHandler struct {
 	adminService       service.AdminService
 	concurrencyService *service.ConcurrencyService
+	usageService       userUsageStatsService
+}
+
+type userUsageStatsService interface {
+	GetStatsByUser(ctx context.Context, userID int64, startTime, endTime time.Time) (*service.UsageStats, error)
 }
 
 // NewUserHandler creates a new admin user handler
-func NewUserHandler(adminService service.AdminService, concurrencyService *service.ConcurrencyService) *UserHandler {
+func NewUserHandler(adminService service.AdminService, concurrencyService *service.ConcurrencyService, usageService *service.UsageService) *UserHandler {
 	return &UserHandler{
 		adminService:       adminService,
 		concurrencyService: concurrencyService,
+		usageService:       usageService,
 	}
 }
 
@@ -250,8 +259,26 @@ func (h *UserHandler) GetUserUsage(c *gin.Context) {
 	}
 
 	period := c.DefaultQuery("period", "month")
+	userTZ := c.Query("timezone")
+	now := timezone.NowInUserLocation(userTZ)
+	var startTime time.Time
+	switch period {
+	case "today":
+		startTime = timezone.StartOfDayInUserLocation(now, userTZ)
+	case "week":
+		startTime = now.AddDate(0, 0, -7)
+	case "month":
+		startTime = now.AddDate(0, -1, 0)
+	default:
+		response.BadRequest(c, "Invalid period, use today, week, or month")
+		return
+	}
+	if h.usageService == nil {
+		response.InternalError(c, "Usage service not available")
+		return
+	}
 
-	stats, err := h.adminService.GetUserUsageStats(c.Request.Context(), userID, period)
+	stats, err := h.usageService.GetStatsByUser(c.Request.Context(), userID, startTime, now)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return

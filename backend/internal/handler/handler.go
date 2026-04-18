@@ -6,33 +6,34 @@ import (
 
 // AdminHandlers contains all admin-related HTTP handlers
 type AdminHandlers struct {
-	Dashboard             *admin.DashboardHandler
-	User                  *admin.UserHandler
-	Group                 *admin.GroupHandler
-	Account               *admin.AccountHandler
-	OAuth                 *admin.OAuthHandler
-	OpenAIOAuth           *admin.OpenAIOAuthHandler
-	GeminiOAuth           *admin.GeminiOAuthHandler
-	AntigravityOAuth      *admin.AntigravityOAuthHandler
-	Setting               *admin.SettingHandler
-	System                *admin.SystemHandler
-	Subscription          *admin.SubscriptionHandler
-	Usage                 *admin.UsageHandler
-	APIKey                *admin.AdminAPIKeyHandler
+	Dashboard        *admin.DashboardHandler
+	User             *admin.UserHandler
+	Group            *admin.GroupHandler
+	Proxy            *admin.ProxyHandler
+	Account          *admin.AccountHandler
+	OAuth            *admin.OAuthHandler
+	OpenAIOAuth      *admin.OpenAIOAuthHandler
+	GeminiOAuth      *admin.GeminiOAuthHandler
+	AntigravityOAuth *admin.AntigravityOAuthHandler
+	Setting          *admin.SettingHandler
+	System           *admin.SystemHandler
+	Subscription     *admin.SubscriptionHandler
+	Usage            *admin.UsageHandler
+	APIKey           *admin.AdminAPIKeyHandler
 }
 
 // Handlers contains all HTTP handlers
 type Handlers struct {
-	Auth           *AuthHandler
-	User           *UserHandler
-	APIKey         *APIKeyHandler
-	Usage          *UsageHandler
-	Subscription   *SubscriptionHandler
-	Admin          *AdminHandlers
-	Gateway        *GatewayHandler
-	OpenAIGateway  *OpenAIGatewayHandler
-	Setting        *SettingHandler
-	Totp           *TotpHandler
+	Auth          *AuthHandler
+	User          *UserHandler
+	APIKey        *APIKeyHandler
+	Usage         *UsageHandler
+	Subscription  *SubscriptionHandler
+	Admin         *AdminHandlers
+	Gateway       *GatewayHandler
+	OpenAIGateway *OpenAIGatewayHandler
+	Setting       *SettingHandler
+	Totp          *TotpHandler
 }
 
 // BuildInfo contains build-time information

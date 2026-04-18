@@ -140,10 +140,6 @@ func (s *stubAdminService) GetUserAPIKeys(ctx context.Context, userID int64, pag
 	return s.apiKeys, int64(len(s.apiKeys)), nil
 }
 
-func (s *stubAdminService) GetUserUsageStats(ctx context.Context, userID int64, period string) (any, error) {
-	return map[string]any{"user_id": userID}, nil
-}
-
 func (s *stubAdminService) ListGroups(ctx context.Context, page, pageSize int, platform, status, search string, isExclusive *bool, sortBy, sortOrder string) ([]service.Group, int64, error) {
 	return s.groups, int64(len(s.groups)), nil
 }

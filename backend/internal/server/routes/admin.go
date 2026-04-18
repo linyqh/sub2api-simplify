@@ -26,6 +26,9 @@ func RegisterAdminRoutes(
 		// 分组管理
 		registerGroupRoutes(admin, h)
 
+		// 代理管理
+		registerProxyRoutes(admin, h)
+
 		// 账号管理
 		registerAccountRoutes(admin, h)
 
@@ -67,7 +70,6 @@ func registerDashboardRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	{
 		dashboard.GET("/snapshot-v2", h.Admin.Dashboard.GetSnapshotV2)
 		dashboard.GET("/stats", h.Admin.Dashboard.GetStats)
-		dashboard.GET("/realtime", h.Admin.Dashboard.GetRealtimeMetrics)
 		dashboard.GET("/trend", h.Admin.Dashboard.GetUsageTrend)
 		dashboard.GET("/models", h.Admin.Dashboard.GetModelStats)
 		dashboard.GET("/groups", h.Admin.Dashboard.GetGroupStats)
@@ -112,6 +114,25 @@ func registerGroupRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		groups.PUT("/:id/rate-multipliers", h.Admin.Group.BatchSetGroupRateMultipliers)
 		groups.DELETE("/:id/rate-multipliers", h.Admin.Group.ClearGroupRateMultipliers)
 		groups.GET("/:id/api-keys", h.Admin.Group.GetGroupAPIKeys)
+	}
+}
+
+func registerProxyRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	proxies := admin.Group("/proxies")
+	{
+		proxies.GET("", h.Admin.Proxy.List)
+		proxies.GET("/all", h.Admin.Proxy.GetAll)
+		proxies.POST("/batch", h.Admin.Proxy.BatchCreate)
+		proxies.POST("/batch-delete", h.Admin.Proxy.BatchDelete)
+		proxies.GET("/data", h.Admin.Proxy.ExportData)
+		proxies.POST("/data", h.Admin.Proxy.ImportData)
+		proxies.GET("/:id", h.Admin.Proxy.GetByID)
+		proxies.POST("", h.Admin.Proxy.Create)
+		proxies.PUT("/:id", h.Admin.Proxy.Update)
+		proxies.DELETE("/:id", h.Admin.Proxy.Delete)
+		proxies.POST("/:id/test", h.Admin.Proxy.Test)
+		proxies.POST("/:id/quality-check", h.Admin.Proxy.CheckQuality)
+		proxies.GET("/:id/accounts", h.Admin.Proxy.GetProxyAccounts)
 	}
 }
 

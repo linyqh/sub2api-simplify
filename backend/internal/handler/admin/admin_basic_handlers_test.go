@@ -2,22 +2,60 @@ package admin
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
+	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
+
+type fakeUserUsageStatsService struct{}
+
+func (fakeUserUsageStatsService) GetStatsByUser(_ context.Context, _ int64, _, _ time.Time) (*service.UsageStats, error) {
+	return &service.UsageStats{
+		TotalRequests:     12,
+		TotalTokens:       345,
+		TotalCost:         6.78,
+		TotalActualCost:   5.43,
+		AverageDurationMs: 123,
+	}, nil
+}
+
+type fakeGroupDashboardService struct{}
+
+func (fakeGroupDashboardService) GetGroupStatsWithFilters(_ context.Context, _, _ time.Time, _, _, _, groupID int64, _ *int16, _ *bool, _ *int8) ([]usagestats.GroupStat, error) {
+	return []usagestats.GroupStat{
+		{
+			GroupID:  groupID,
+			Requests: 34,
+			Cost:     7.89,
+		},
+	}, nil
+}
+
+func (fakeGroupDashboardService) GetGroupUsageSummary(_ context.Context, _ time.Time) ([]usagestats.GroupUsageSummary, error) {
+	return nil, nil
+}
 
 func setupAdminRouter() (*gin.Engine, *stubAdminService) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	adminSvc := newStubAdminService()
 
-	userHandler := NewUserHandler(adminSvc, nil)
-	groupHandler := NewGroupHandler(adminSvc, nil, nil)
+	userHandler := &UserHandler{
+		adminService: adminSvc,
+		usageService: fakeUserUsageStatsService{},
+	}
+	groupHandler := &GroupHandler{
+		adminService:     adminSvc,
+		dashboardService: fakeGroupDashboardService{},
+	}
 	proxyHandler := NewProxyHandler(adminSvc)
 
 	router.GET("/api/v1/admin/users", userHandler.List)
@@ -46,7 +84,6 @@ func setupAdminRouter() (*gin.Engine, *stubAdminService) {
 	router.POST("/api/v1/admin/proxies/batch-delete", proxyHandler.BatchDelete)
 	router.POST("/api/v1/admin/proxies/:id/test", proxyHandler.Test)
 	router.POST("/api/v1/admin/proxies/:id/quality-check", proxyHandler.CheckQuality)
-	router.GET("/api/v1/admin/proxies/:id/stats", proxyHandler.GetStats)
 	router.GET("/api/v1/admin/proxies/:id/accounts", proxyHandler.GetProxyAccounts)
 
 	return router, adminSvc
@@ -95,6 +132,8 @@ func TestUserHandlerEndpoints(t *testing.T) {
 	req = httptest.NewRequest(http.MethodGet, "/api/v1/admin/users/1/usage?period=today", nil)
 	router.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusOK, rec.Code)
+	require.Contains(t, rec.Body.String(), "\"total_requests\":12")
+	require.Contains(t, rec.Body.String(), "\"total_tokens\":345")
 }
 
 func TestGroupHandlerEndpoints(t *testing.T) {
@@ -138,6 +177,9 @@ func TestGroupHandlerEndpoints(t *testing.T) {
 	req = httptest.NewRequest(http.MethodGet, "/api/v1/admin/groups/2/stats", nil)
 	router.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusOK, rec.Code)
+	require.Contains(t, rec.Body.String(), "\"total_api_keys\":1")
+	require.Contains(t, rec.Body.String(), "\"active_api_keys\":1")
+	require.Contains(t, rec.Body.String(), "\"total_requests\":34")
 
 	rec = httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodGet, "/api/v1/admin/groups/2/api-keys", nil)
@@ -195,11 +237,6 @@ func TestProxyHandlerEndpoints(t *testing.T) {
 
 	rec = httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodPost, "/api/v1/admin/proxies/4/quality-check", nil)
-	router.ServeHTTP(rec, req)
-	require.Equal(t, http.StatusOK, rec.Code)
-
-	rec = httptest.NewRecorder()
-	req = httptest.NewRequest(http.MethodGet, "/api/v1/admin/proxies/4/stats", nil)
 	router.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusOK, rec.Code)
 

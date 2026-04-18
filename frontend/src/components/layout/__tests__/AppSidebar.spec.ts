@@ -15,6 +15,11 @@ describe('AppSidebar custom menu pruning', () => {
     expect(componentSource).not.toContain('sanitizeSvg')
     expect(componentSource).not.toContain('iconSvg')
   })
+
+  it('includes the admin proxies navigation entry', () => {
+    expect(componentSource).toContain("/admin/proxies")
+    expect(componentSource).toContain("sidebar-proxy-manage")
+  })
 })
 
 describe('AppSidebar header styles', () => {
