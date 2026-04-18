@@ -18,20 +18,43 @@ import (
 	"time"
 )
 
+func isExternalServiceUnavailableError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	errStr := strings.ToLower(err.Error())
+	unavailableSignals := []string{
+		"certificate has expired",
+		"certificate is not yet valid",
+		"connection refused",
+		"connection reset by peer",
+		"no such host",
+		"network is unreachable",
+		"timeout",
+		"deadline exceeded",
+		"unexpected eof",
+		"eof",
+		"temporary failure",
+		"server misbehaving",
+		"tls handshake timeout",
+	}
+
+	for _, signal := range unavailableSignals {
+		if strings.Contains(errStr, signal) {
+			return true
+		}
+	}
+
+	return false
+}
+
 // skipIfExternalServiceUnavailable checks if the external service is available.
 // If not, it skips the test instead of failing.
 func skipIfExternalServiceUnavailable(t *testing.T, err error) {
 	t.Helper()
 	if err != nil {
-		// Check for common network/TLS errors that indicate external service issues
-		errStr := err.Error()
-		if strings.Contains(errStr, "certificate has expired") ||
-			strings.Contains(errStr, "certificate is not yet valid") ||
-			strings.Contains(errStr, "connection refused") ||
-			strings.Contains(errStr, "no such host") ||
-			strings.Contains(errStr, "network is unreachable") ||
-			strings.Contains(errStr, "timeout") ||
-			strings.Contains(errStr, "deadline exceeded") {
+		if isExternalServiceUnavailableError(err) {
 			t.Skipf("skipping test: external service unavailable: %v", err)
 		}
 		t.Fatalf("failed to get fingerprint: %v", err)
