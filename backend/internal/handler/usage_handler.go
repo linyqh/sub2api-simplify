@@ -1,11 +1,13 @@
 package handler
 
 import (
+	"context"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
@@ -287,7 +289,7 @@ func parseUserTimeRange(c *gin.Context) (time.Time, time.Time) {
 
 	if endDate != "" {
 		if t, err := timezone.ParseInUserLocation("2006-01-02", endDate, userTZ); err == nil {
-			endTime = t.Add(24 * time.Hour) // Include the end date
+			endTime = t.AddDate(0, 0, 1) // Include the end date (DST-safe)
 		} else {
 			endTime = timezone.StartOfDayInUserLocation(now.AddDate(0, 0, 1), userTZ)
 		}
@@ -296,6 +298,20 @@ func parseUserTimeRange(c *gin.Context) (time.Time, time.Time) {
 	}
 
 	return startTime, endTime
+}
+
+func usageContextWithUserTimezone(base context.Context, userTZ string) context.Context {
+	now := timezone.NowInUserLocation(userTZ)
+	todayStart := timezone.StartOfDayInUserLocation(now, userTZ)
+	ctx := context.WithValue(base, ctxkey.UsageTodayStart, todayStart)
+	if strings.TrimSpace(userTZ) == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, ctxkey.UsageTimezone, strings.TrimSpace(userTZ))
+}
+
+func formatInclusiveEndDate(endTime time.Time) string {
+	return endTime.AddDate(0, 0, -1).Format("2006-01-02")
 }
 
 // DashboardStats handles getting user dashboard statistics
@@ -307,7 +323,8 @@ func (h *UsageHandler) DashboardStats(c *gin.Context) {
 		return
 	}
 
-	stats, err := h.usageService.GetUserDashboardStats(c.Request.Context(), subject.UserID)
+	ctx := usageContextWithUserTimezone(c.Request.Context(), c.Query("timezone"))
+	stats, err := h.usageService.GetUserDashboardStats(ctx, subject.UserID)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -327,8 +344,9 @@ func (h *UsageHandler) DashboardTrend(c *gin.Context) {
 
 	startTime, endTime := parseUserTimeRange(c)
 	granularity := c.DefaultQuery("granularity", "day")
+	ctx := usageContextWithUserTimezone(c.Request.Context(), c.Query("timezone"))
 
-	trend, err := h.usageService.GetUserUsageTrendByUserID(c.Request.Context(), subject.UserID, startTime, endTime, granularity)
+	trend, err := h.usageService.GetUserUsageTrendByUserID(ctx, subject.UserID, startTime, endTime, granularity)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -337,7 +355,7 @@ func (h *UsageHandler) DashboardTrend(c *gin.Context) {
 	response.Success(c, gin.H{
 		"trend":       trend,
 		"start_date":  startTime.Format("2006-01-02"),
-		"end_date":    endTime.Add(-24 * time.Hour).Format("2006-01-02"),
+		"end_date":    formatInclusiveEndDate(endTime),
 		"granularity": granularity,
 	})
 }
@@ -352,8 +370,9 @@ func (h *UsageHandler) DashboardModels(c *gin.Context) {
 	}
 
 	startTime, endTime := parseUserTimeRange(c)
+	ctx := usageContextWithUserTimezone(c.Request.Context(), c.Query("timezone"))
 
-	stats, err := h.usageService.GetUserModelStats(c.Request.Context(), subject.UserID, startTime, endTime)
+	stats, err := h.usageService.GetUserModelStats(ctx, subject.UserID, startTime, endTime)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -362,7 +381,7 @@ func (h *UsageHandler) DashboardModels(c *gin.Context) {
 	response.Success(c, gin.H{
 		"models":     stats,
 		"start_date": startTime.Format("2006-01-02"),
-		"end_date":   endTime.Add(-24 * time.Hour).Format("2006-01-02"),
+		"end_date":   formatInclusiveEndDate(endTime),
 	})
 }
 
@@ -408,7 +427,8 @@ func (h *UsageHandler) DashboardAPIKeysUsage(c *gin.Context) {
 		return
 	}
 
-	stats, err := h.usageService.GetBatchAPIKeyUsageStats(c.Request.Context(), validAPIKeyIDs, time.Time{}, time.Time{})
+	ctx := usageContextWithUserTimezone(c.Request.Context(), c.Query("timezone"))
+	stats, err := h.usageService.GetBatchAPIKeyUsageStats(ctx, validAPIKeyIDs, time.Time{}, time.Time{})
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return

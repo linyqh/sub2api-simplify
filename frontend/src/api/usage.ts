@@ -3,7 +3,7 @@
  * Handles usage logs and statistics retrieval
  */
 
-import { apiClient } from './client'
+import { apiClient, getUserTimezone } from './client'
 import type {
   UsageLog,
   UsageQueryParams,
@@ -251,7 +251,10 @@ export async function getDashboardApiKeysUsage(
       api_key_ids: apiKeyIds
     },
     {
-      signal: options?.signal
+      signal: options?.signal,
+      params: {
+        timezone: getUserTimezone()
+      }
     }
   )
   return data

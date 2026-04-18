@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
@@ -856,6 +857,24 @@ func (s *UsageLogRepoSuite) TestGetUserDashboardStats() {
 	s.Require().Equal(int64(1), stats.TotalRequests)
 }
 
+func (s *UsageLogRepoSuite) TestGetUserDashboardStats_UsesContextTodayStart() {
+	user := mustCreateUser(s.T(), s.client, &service.User{Email: "userdash-context@test.com"})
+	apiKey := mustCreateApiKey(s.T(), s.client, &service.APIKey{UserID: user.ID, Key: "sk-userdash-context", Name: "k"})
+	account := mustCreateAccount(s.T(), s.client, &service.Account{Name: "acc-userdash-context"})
+
+	todayStart := time.Date(2025, 1, 16, 0, 0, 0, 0, time.UTC)
+	s.createUsageLog(user, apiKey, account, 10, 20, 0.5, todayStart.Add(-time.Hour))
+	s.createUsageLog(user, apiKey, account, 30, 40, 0.6, todayStart.Add(time.Hour))
+
+	ctx := context.WithValue(s.ctx, ctxkey.UsageTodayStart, todayStart)
+	stats, err := s.repo.GetUserDashboardStats(ctx, user.ID)
+	s.Require().NoError(err, "GetUserDashboardStats with ctx today start")
+	s.Require().Equal(int64(2), stats.TotalRequests)
+	s.Require().Equal(int64(1), stats.TodayRequests)
+	s.Require().Equal(int64(30), stats.TodayInputTokens)
+	s.Require().Equal(int64(40), stats.TodayOutputTokens)
+}
+
 // --- GetAccountTodayStats ---
 
 func (s *UsageLogRepoSuite) TestGetAccountTodayStats() {
@@ -1102,6 +1121,23 @@ func (s *UsageLogRepoSuite) TestGetBatchApiKeyUsageStats() {
 	s.Require().Len(stats, 2)
 }
 
+func (s *UsageLogRepoSuite) TestGetBatchApiKeyUsageStats_TotalIncludesHistoricalAndTodayUsesContext() {
+	user := mustCreateUser(s.T(), s.client, &service.User{Email: "batchkey-context@test.com"})
+	apiKey := mustCreateApiKey(s.T(), s.client, &service.APIKey{UserID: user.ID, Key: "sk-batchkey-context", Name: "k"})
+	account := mustCreateAccount(s.T(), s.client, &service.Account{Name: "acc-batchkey-context"})
+
+	todayStart := time.Date(2025, 2, 1, 0, 0, 0, 0, time.UTC)
+	s.createUsageLog(user, apiKey, account, 10, 20, 1.25, todayStart.AddDate(0, 0, -45))
+	s.createUsageLog(user, apiKey, account, 30, 40, 2.50, todayStart.Add(2*time.Hour))
+
+	ctx := context.WithValue(s.ctx, ctxkey.UsageTodayStart, todayStart)
+	stats, err := s.repo.GetBatchAPIKeyUsageStats(ctx, []int64{apiKey.ID}, time.Time{}, time.Time{})
+	s.Require().NoError(err, "GetBatchAPIKeyUsageStats with ctx today start")
+	s.Require().Len(stats, 1)
+	s.Require().InEpsilon(3.75, stats[apiKey.ID].TotalActualCost, 0.0001)
+	s.Require().InEpsilon(2.50, stats[apiKey.ID].TodayActualCost, 0.0001)
+}
+
 func (s *UsageLogRepoSuite) TestGetBatchApiKeyUsageStats_Empty() {
 	stats, err := s.repo.GetBatchAPIKeyUsageStats(s.ctx, []int64{}, time.Time{}, time.Time{})
 	s.Require().NoError(err)
@@ -1288,6 +1324,23 @@ func (s *UsageLogRepoSuite) TestGetUserUsageTrendByUserID() {
 	s.Require().Len(trend, 2) // 2 different days
 }
 
+func (s *UsageLogRepoSuite) TestGetUserUsageTrendByUserID_UsesContextTimezone() {
+	user := mustCreateUser(s.T(), s.client, &service.User{Email: "usertrend-tz@test.com"})
+	apiKey := mustCreateApiKey(s.T(), s.client, &service.APIKey{UserID: user.ID, Key: "sk-usertrend-tz", Name: "k"})
+	account := mustCreateAccount(s.T(), s.client, &service.Account{Name: "acc-usertrend-tz"})
+
+	base := time.Date(2025, 1, 15, 23, 30, 0, 0, time.UTC)
+	s.createUsageLog(user, apiKey, account, 10, 20, 0.5, base)
+	s.createUsageLog(user, apiKey, account, 15, 25, 0.6, base.Add(time.Hour))
+
+	ctx := context.WithValue(s.ctx, ctxkey.UsageTimezone, "Asia/Shanghai")
+	trend, err := s.repo.GetUserUsageTrendByUserID(ctx, user.ID, base.Add(-time.Hour), base.Add(2*time.Hour), "day")
+	s.Require().NoError(err, "GetUserUsageTrendByUserID with timezone")
+	s.Require().Len(trend, 1)
+	s.Require().Equal("2025-01-16", trend[0].Date)
+	s.Require().Equal(int64(2), trend[0].Requests)
+}
+
 func (s *UsageLogRepoSuite) TestGetUserUsageTrendByUserID_HourlyGranularity() {
 	user := mustCreateUser(s.T(), s.client, &service.User{Email: "usertrendhourly@test.com"})
 	apiKey := mustCreateApiKey(s.T(), s.client, &service.APIKey{UserID: user.ID, Key: "sk-usertrendhourly", Name: "k"})
@@ -1352,6 +1405,33 @@ func (s *UsageLogRepoSuite) TestGetUserModelStats() {
 	// Should be ordered by total_tokens DESC
 	s.Require().Equal("claude-3-opus", stats[0].Model)
 	s.Require().Equal(int64(300), stats[0].TotalTokens)
+}
+
+func (s *UsageLogRepoSuite) TestGetUserModelStats_PrefersRequestedModel() {
+	user := mustCreateUser(s.T(), s.client, &service.User{Email: "modelstats-requested@test.com"})
+	apiKey := mustCreateApiKey(s.T(), s.client, &service.APIKey{UserID: user.ID, Key: "sk-modelstats-requested", Name: "k"})
+	account := mustCreateAccount(s.T(), s.client, &service.Account{Name: "acc-modelstats-requested"})
+
+	base := time.Date(2025, 1, 15, 12, 0, 0, 0, time.UTC)
+	_, err := s.repo.Create(s.ctx, &service.UsageLog{
+		UserID:         user.ID,
+		APIKeyID:       apiKey.ID,
+		AccountID:      account.ID,
+		RequestID:      uuid.New().String(),
+		Model:          "gpt-4o-upstream",
+		RequestedModel: "gpt-4o",
+		InputTokens:    12,
+		OutputTokens:   34,
+		TotalCost:      0.9,
+		ActualCost:     0.9,
+		CreatedAt:      base,
+	})
+	s.Require().NoError(err)
+
+	stats, err := s.repo.GetUserModelStats(s.ctx, user.ID, base.Add(-time.Hour), base.Add(time.Hour))
+	s.Require().NoError(err, "GetUserModelStats requested model")
+	s.Require().Len(stats, 1)
+	s.Require().Equal("gpt-4o", stats[0].Model)
 }
 
 // --- GetUsageTrendWithFilters ---

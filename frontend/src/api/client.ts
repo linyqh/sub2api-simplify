@@ -44,7 +44,7 @@ function onTokenRefreshed(token: string): void {
 // ==================== Request Interceptor ====================
 
 // Get user's timezone
-const getUserTimezone = (): string => {
+export const getUserTimezone = (): string => {
   try {
     return Intl.DateTimeFormat().resolvedOptions().timeZone
   } catch {

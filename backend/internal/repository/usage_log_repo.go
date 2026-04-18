@@ -19,6 +19,7 @@ import (
 	dbgroup "github.com/Wei-Shaw/sub2api/ent/group"
 	dbuser "github.com/Wei-Shaw/sub2api/ent/user"
 	dbusersub "github.com/Wei-Shaw/sub2api/ent/usersubscription"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
@@ -226,7 +227,7 @@ func (r *usageLogRepository) getPerformanceStats(ctx context.Context, userID int
 	query := `
 		SELECT
 			COUNT(*) as request_count,
-			COALESCE(SUM(input_tokens + output_tokens), 0) as token_count
+			COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens), 0) as token_count
 		FROM usage_logs
 		WHERE created_at >= $1`
 	args := []any{fiveMinutesAgo}
@@ -241,6 +242,27 @@ func (r *usageLogRepository) getPerformanceStats(ctx context.Context, userID int
 		return 0, 0, err
 	}
 	return requestCount / 5, tokenCount / 5, nil
+}
+
+func usageTodayStartFromContext(ctx context.Context) time.Time {
+	if ctx != nil {
+		if todayStart, ok := ctx.Value(ctxkey.UsageTodayStart).(time.Time); ok && !todayStart.IsZero() {
+			return todayStart
+		}
+	}
+	return timezone.Today()
+}
+
+func usageTimezoneFromContext(ctx context.Context) string {
+	if ctx != nil {
+		if userTZ, ok := ctx.Value(ctxkey.UsageTimezone).(string); ok && strings.TrimSpace(userTZ) != "" {
+			userTZ = strings.TrimSpace(userTZ)
+			if _, err := time.LoadLocation(userTZ); err == nil {
+				return userTZ
+			}
+		}
+	}
+	return timezone.Name()
 }
 
 func (r *usageLogRepository) Create(ctx context.Context, log *service.UsageLog) (bool, error) {
@@ -2355,7 +2377,7 @@ type UserDashboardStats = usagestats.UserDashboardStats
 // GetUserDashboardStats 获取用户专属的仪表盘统计
 func (r *usageLogRepository) GetUserDashboardStats(ctx context.Context, userID int64) (*UserDashboardStats, error) {
 	stats := &UserDashboardStats{}
-	today := timezone.Today()
+	today := usageTodayStartFromContext(ctx)
 
 	// API Key 统计
 	if err := scanSingleRow(
@@ -2472,7 +2494,7 @@ func (r *usageLogRepository) getPerformanceStatsByAPIKey(ctx context.Context, ap
 // GetAPIKeyDashboardStats 获取指定 API Key 的仪表盘统计（按 api_key_id 过滤）
 func (r *usageLogRepository) GetAPIKeyDashboardStats(ctx context.Context, apiKeyID int64) (*UserDashboardStats, error) {
 	stats := &UserDashboardStats{}
-	today := timezone.Today()
+	today := usageTodayStartFromContext(ctx)
 
 	// API Key 维度不需要统计 key 数量，设为 1
 	stats.TotalAPIKeys = 1
@@ -2554,10 +2576,11 @@ func (r *usageLogRepository) GetAPIKeyDashboardStats(ctx context.Context, apiKey
 // GetUserUsageTrendByUserID 获取指定用户的使用趋势
 func (r *usageLogRepository) GetUserUsageTrendByUserID(ctx context.Context, userID int64, startTime, endTime time.Time, granularity string) (results []TrendDataPoint, err error) {
 	dateFormat := safeDateFormat(granularity)
+	userTZ := usageTimezoneFromContext(ctx)
 
 	query := fmt.Sprintf(`
 		SELECT
-			TO_CHAR(created_at, '%s') as date,
+			TO_CHAR(timezone($4, created_at), '%s') as date,
 			COUNT(*) as requests,
 			COALESCE(SUM(input_tokens), 0) as input_tokens,
 			COALESCE(SUM(output_tokens), 0) as output_tokens,
@@ -2572,7 +2595,7 @@ func (r *usageLogRepository) GetUserUsageTrendByUserID(ctx context.Context, user
 		ORDER BY date ASC
 	`, dateFormat)
 
-	rows, err := r.sql.QueryContext(ctx, query, userID, startTime, endTime)
+	rows, err := r.sql.QueryContext(ctx, query, userID, startTime, endTime, userTZ)
 	if err != nil {
 		return nil, err
 	}
@@ -2594,9 +2617,10 @@ func (r *usageLogRepository) GetUserUsageTrendByUserID(ctx context.Context, user
 
 // GetUserModelStats 获取指定用户的模型统计
 func (r *usageLogRepository) GetUserModelStats(ctx context.Context, userID int64, startTime, endTime time.Time) (results []ModelStat, err error) {
+	modelExpr := resolveModelDimensionExpression(usagestats.ModelSourceRequested)
 	query := `
 		SELECT
-			model,
+			` + modelExpr + ` as model,
 			COUNT(*) as requests,
 			COALESCE(SUM(input_tokens), 0) as input_tokens,
 			COALESCE(SUM(output_tokens), 0) as output_tokens,
@@ -2608,7 +2632,7 @@ func (r *usageLogRepository) GetUserModelStats(ctx context.Context, userID int64
 			COALESCE(SUM(COALESCE(account_stats_cost, total_cost) * COALESCE(account_rate_multiplier, 1)), 0) as account_cost
 		FROM usage_logs
 		WHERE user_id = $1 AND created_at >= $2 AND created_at < $3
-		GROUP BY model
+		GROUP BY ` + modelExpr + `
 		ORDER BY total_tokens DESC
 	`
 
@@ -2800,12 +2824,12 @@ func (r *usageLogRepository) GetBatchAPIKeyUsageStats(ctx context.Context, apiKe
 		return result, nil
 	}
 
-	// 默认最近 30 天
-	if startTime.IsZero() {
-		startTime = time.Now().AddDate(0, 0, -30)
-	}
-	if endTime.IsZero() {
+	useTotalRange := startTime.IsZero() && endTime.IsZero()
+	if !startTime.IsZero() && endTime.IsZero() {
 		endTime = time.Now()
+	}
+	if startTime.IsZero() && !endTime.IsZero() {
+		startTime = time.Unix(0, 0).UTC()
 	}
 
 	for _, id := range normalizedAPIKeyIDs {
@@ -2815,15 +2839,17 @@ func (r *usageLogRepository) GetBatchAPIKeyUsageStats(ctx context.Context, apiKe
 	query := `
 		SELECT
 			api_key_id,
-			COALESCE(SUM(actual_cost) FILTER (WHERE created_at >= $2 AND created_at < $3), 0) as total_cost,
-			COALESCE(SUM(actual_cost) FILTER (WHERE created_at >= $4), 0) as today_cost
+			COALESCE(SUM(actual_cost) FILTER (
+				WHERE CASE WHEN $2::boolean THEN TRUE ELSE created_at >= $3 AND created_at < $4 END
+			), 0) as total_cost,
+			COALESCE(SUM(actual_cost) FILTER (WHERE created_at >= $5), 0) as today_cost
 		FROM usage_logs
 		WHERE api_key_id = ANY($1)
-		  AND created_at >= LEAST($2, $4)
+		  AND ($2::boolean OR created_at >= LEAST($3, $5))
 		GROUP BY api_key_id
 	`
-	today := timezone.Today()
-	rows, err := r.sql.QueryContext(ctx, query, pq.Array(normalizedAPIKeyIDs), startTime, endTime, today)
+	today := usageTodayStartFromContext(ctx)
+	rows, err := r.sql.QueryContext(ctx, query, pq.Array(normalizedAPIKeyIDs), useTotalRange, startTime, endTime, today)
 	if err != nil {
 		return nil, err
 	}

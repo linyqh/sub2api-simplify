@@ -55,4 +55,12 @@ const (
 
 	// ClaudeCodeVersion stores the extracted Claude Code version from User-Agent (e.g. "2.1.22")
 	ClaudeCodeVersion Key = "ctx_claude_code_version"
+
+	// UsageTodayStart stores the user-visible "today" lower bound for usage stats.
+	// Handlers set it from the caller's timezone so repository-layer "today" summaries
+	// can stay aligned with user-facing date ranges.
+	UsageTodayStart Key = "ctx_usage_today_start"
+
+	// UsageTimezone stores the caller's IANA timezone for usage bucketing/reporting.
+	UsageTimezone Key = "ctx_usage_timezone"
 )
