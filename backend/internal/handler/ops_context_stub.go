@@ -14,4 +14,8 @@ func setOpsRequestContext(_ *gin.Context, _ string, _ bool, _ []byte) {}
 
 func setOpsEndpointContext(_ *gin.Context, _ string, _ int16) {}
 
-func setOpsSelectedAccount(_ *gin.Context, _ int64, _ string) {}
+func setOpsSelectedAccount(c *gin.Context, accountID int64, _ string) {
+	if c != nil {
+		c.Set(opsAccountIDKey, accountID)
+	}
+}

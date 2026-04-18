@@ -65,5 +65,4 @@ func TestNewUserService_FieldsAssignment(t *testing.T) {
 	require.NotNil(t, svc)
 	require.Equal(t, repo, svc.userRepo)
 	require.Equal(t, auth, svc.authCacheInvalidator)
-	require.Nil(t, svc.billingCache)
 }

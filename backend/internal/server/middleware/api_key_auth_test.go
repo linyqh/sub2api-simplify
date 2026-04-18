@@ -443,6 +443,15 @@ func TestAPIKeyAuthTouchLastUsedFailureDoesNotBlock(t *testing.T) {
 func TestAPIKeyAuthTouchesLastUsedInStandardMode(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
+	limit := 10.0
+	group := &service.Group{
+		ID:               12,
+		Name:             "standard-sub",
+		Status:           service.StatusActive,
+		Hydrated:         true,
+		SubscriptionType: service.SubscriptionTypeSubscription,
+		DailyLimitUSD:    &limit,
+	}
 	user := &service.User{
 		ID:          9,
 		Role:        service.RoleUser,
@@ -450,11 +459,13 @@ func TestAPIKeyAuthTouchesLastUsedInStandardMode(t *testing.T) {
 		Concurrency: 3,
 	}
 	apiKey := &service.APIKey{
-		ID:     102,
-		UserID: user.ID,
-		Key:    "touch-standard",
-		Status: service.StatusActive,
-		User:   user,
+		ID:      102,
+		UserID:  user.ID,
+		Key:     "touch-standard",
+		Status:  service.StatusActive,
+		User:    user,
+		Group:   group,
+		GroupID: &group.ID,
 	}
 
 	touchCalls := 0
@@ -474,7 +485,28 @@ func TestAPIKeyAuthTouchesLastUsedInStandardMode(t *testing.T) {
 
 	cfg := &config.Config{RunMode: config.RunModeStandard}
 	apiKeyService := service.NewAPIKeyService(apiKeyRepo, nil, nil, nil, nil, nil, cfg)
-	router := newAuthTestRouter(apiKeyService, nil, cfg)
+	subscriptionRepo := &stubUserSubscriptionRepo{
+		getActive: func(ctx context.Context, userID, groupID int64) (*service.UserSubscription, error) {
+			if userID != user.ID || groupID != group.ID {
+				return nil, service.ErrSubscriptionNotFound
+			}
+			return &service.UserSubscription{
+				ID:            88,
+				UserID:        user.ID,
+				GroupID:       group.ID,
+				Status:        service.SubscriptionStatusActive,
+				ExpiresAt:     time.Now().Add(24 * time.Hour),
+				DailyUsageUSD: 0,
+			}, nil
+		},
+		updateStatus:   func(context.Context, int64, string) error { return nil },
+		activateWindow: func(context.Context, int64, time.Time) error { return nil },
+		resetDaily:     func(context.Context, int64, time.Time) error { return nil },
+		resetWeekly:    func(context.Context, int64, time.Time) error { return nil },
+		resetMonthly:   func(context.Context, int64, time.Time) error { return nil },
+	}
+	subscriptionService := service.NewSubscriptionService(nil, subscriptionRepo, nil, nil, cfg)
+	router := newAuthTestRouter(apiKeyService, subscriptionService, cfg)
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/t", nil)
