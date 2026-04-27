@@ -3800,10 +3800,12 @@ func (s *OpenAIGatewayService) SelectAccountByPreviousResponseID(
 	previousResponseID string,
 	requestedModel string,
 	excludedIDs map[int64]struct{},
+	requireCompactOpt ...bool,
 ) (*AccountSelectionResult, error) {
 	if s == nil {
 		return nil, nil
 	}
+	requireCompact := len(requireCompactOpt) > 0 && requireCompactOpt[0]
 	responseID := strings.TrimSpace(previousResponseID)
 	if responseID == "" {
 		return nil, nil
@@ -3840,7 +3842,7 @@ func (s *OpenAIGatewayService) SelectAccountByPreviousResponseID(
 	if requestedModel != "" && !account.IsModelSupported(requestedModel) {
 		return nil, nil
 	}
-	account = s.recheckSelectedOpenAIAccountFromDB(ctx, account, requestedModel)
+	account = s.recheckSelectedOpenAIAccountFromDB(ctx, account, requestedModel, requireCompact)
 	if account == nil {
 		_ = store.DeleteResponseAccount(ctx, derefGroupID(groupID), responseID)
 		return nil, nil

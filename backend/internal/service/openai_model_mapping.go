@@ -17,3 +17,14 @@ func resolveOpenAIForwardModel(account *Account, requestedModel, defaultMappedMo
 	}
 	return mappedModel
 }
+
+func resolveOpenAICompactForwardModel(account *Account, requestedModel string) string {
+	if account == nil {
+		return requestedModel
+	}
+	mappedModel, matched := account.ResolveCompactMappedModel(requestedModel)
+	if !matched {
+		return requestedModel
+	}
+	return mappedModel
+}
