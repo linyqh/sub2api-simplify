@@ -66,6 +66,122 @@ func TestOpenAIGatewayService_SelectAccountWithScheduler_SessionStickyRateLimite
 	require.Equal(t, openAIAccountScheduleLayerLoadBalance, decision.Layer)
 }
 
+func TestAccountOpenAICompactSupportModesAndMapping(t *testing.T) {
+	account := &Account{
+		ID:       41001,
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeOAuth,
+		Extra: map[string]any{
+			"openai_compact_supported": false,
+		},
+		Credentials: map[string]any{
+			"compact_model_mapping": map[string]any{
+				"gpt-5.5": "gpt-5.1-codex",
+				"gpt-5*":  "gpt-5-codex",
+			},
+		},
+	}
+
+	supported, known := account.OpenAICompactSupportKnown()
+	require.True(t, known)
+	require.False(t, supported)
+	require.False(t, account.AllowsOpenAICompact())
+
+	account.Extra["openai_compact_mode"] = OpenAICompactModeForceOn
+	supported, known = account.OpenAICompactSupportKnown()
+	require.True(t, known)
+	require.True(t, supported)
+	require.True(t, account.AllowsOpenAICompact())
+
+	mapped, matched := account.ResolveCompactMappedModel("gpt-5.5")
+	require.True(t, matched)
+	require.Equal(t, "gpt-5.1-codex", mapped)
+	mapped, matched = account.ResolveCompactMappedModel("gpt-5.4")
+	require.True(t, matched)
+	require.Equal(t, "gpt-5-codex", mapped)
+}
+
+func TestOpenAIGatewayService_SelectAccountWithScheduler_CompactSkipsUnsupported(t *testing.T) {
+	ctx := context.Background()
+	groupID := int64(10105)
+	unsupported := Account{
+		ID:          35001,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Priority:    0,
+		Extra: map[string]any{
+			"openai_compact_mode": OpenAICompactModeForceOff,
+		},
+	}
+	supported := Account{
+		ID:          35002,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Priority:    5,
+		Extra: map[string]any{
+			"openai_compact_mode": OpenAICompactModeForceOn,
+		},
+	}
+	svc := &OpenAIGatewayService{
+		accountRepo:        stubOpenAIAccountRepo{accounts: []Account{unsupported, supported}},
+		cfg:                &config.Config{},
+		concurrencyService: NewConcurrencyService(stubConcurrencyCache{}),
+	}
+
+	selection, decision, err := svc.SelectAccountWithScheduler(ctx, &groupID, "", "compact_session", "gpt-5.5", nil, OpenAIUpstreamTransportAny, true)
+	require.NoError(t, err)
+	require.NotNil(t, selection)
+	require.NotNil(t, selection.Account)
+	require.Equal(t, int64(35002), selection.Account.ID)
+	require.Equal(t, openAIAccountScheduleLayerLoadBalance, decision.Layer)
+}
+
+func TestOpenAIGatewayService_SelectAccountWithScheduler_CompactAllUnsupported(t *testing.T) {
+	ctx := context.Background()
+	groupID := int64(10106)
+	accounts := []Account{
+		{
+			ID:          36001,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeOAuth,
+			Status:      StatusActive,
+			Schedulable: true,
+			Concurrency: 1,
+			Priority:    0,
+			Extra: map[string]any{
+				"openai_compact_mode": OpenAICompactModeForceOff,
+			},
+		},
+		{
+			ID:          36002,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeOAuth,
+			Status:      StatusActive,
+			Schedulable: true,
+			Concurrency: 1,
+			Priority:    5,
+			Extra: map[string]any{
+				"openai_compact_supported": false,
+			},
+		},
+	}
+	svc := &OpenAIGatewayService{
+		accountRepo:        stubOpenAIAccountRepo{accounts: accounts},
+		cfg:                &config.Config{},
+		concurrencyService: NewConcurrencyService(stubConcurrencyCache{}),
+	}
+
+	selection, _, err := svc.SelectAccountWithScheduler(ctx, &groupID, "", "compact_session", "gpt-5.5", nil, OpenAIUpstreamTransportAny, true)
+	require.ErrorIs(t, err, ErrNoAvailableCompactAccounts)
+	require.Nil(t, selection)
+}
+
 func TestOpenAIGatewayService_SelectAccountForModelWithExclusions_SkipsFreshlyRateLimitedSnapshotCandidate(t *testing.T) {
 	ctx := context.Background()
 	groupID := int64(10102)

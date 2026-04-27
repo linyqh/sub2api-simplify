@@ -230,6 +230,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 
 	// Generate session hash (header first; fallback to prompt_cache_key)
 	sessionHash := h.gatewayService.GenerateSessionHash(c, sessionHashBody)
+	requireCompact := isOpenAIRemoteCompactPath(c)
 
 	maxAccountSwitches := h.maxAccountSwitches
 	switchCount := 0
@@ -248,12 +249,17 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			reqModel,
 			failedAccountIDs,
 			service.OpenAIUpstreamTransportAny,
+			requireCompact,
 		)
 		if err != nil {
 			reqLog.Warn("openai.account_select_failed",
 				zap.Error(err),
 				zap.Int("excluded_account_count", len(failedAccountIDs)),
 			)
+			if errors.Is(err, service.ErrNoAvailableCompactAccounts) {
+				h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "compact_not_supported", "No available OpenAI accounts support /responses/compact", streamStarted)
+				return
+			}
 			if len(failedAccountIDs) == 0 {
 				h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", "Service temporarily unavailable", streamStarted)
 				return
