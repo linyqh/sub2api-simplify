@@ -1119,6 +1119,61 @@
         </div>
       </div>
 
+      <!-- OpenAI compact routing -->
+      <div
+        v-if="account?.platform === 'openai' && (account?.type === 'oauth' || account?.type === 'apikey')"
+        class="border-t border-gray-200 pt-4 dark:border-dark-600 space-y-4"
+      >
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <label class="input-label mb-0">{{ t('admin.accounts.openai.compactMode') }}</label>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ t('admin.accounts.openai.compactModeDesc') }}
+            </p>
+            <p class="mt-2 text-xs font-medium" :class="openAICompactStatusClass">
+              {{ openAICompactStatusLabel }}
+            </p>
+            <p v-if="openAICompactLastChecked" class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ t('admin.accounts.openai.compactLastChecked') }}: {{ openAICompactLastChecked }}
+            </p>
+          </div>
+          <div class="w-44">
+            <Select v-model="openAICompactMode" :options="openAICompactModeOptions" />
+          </div>
+        </div>
+
+        <div>
+          <label class="input-label">{{ t('admin.accounts.openai.compactModelMapping') }}</label>
+          <p class="input-hint">{{ t('admin.accounts.openai.compactModelMappingDesc') }}</p>
+          <div v-if="openAICompactModelMappings.length > 0" class="mt-3 space-y-2">
+            <div
+              v-for="(mapping, index) in openAICompactModelMappings"
+              :key="getOpenAICompactModelMappingKey(mapping)"
+              class="flex items-center gap-2"
+            >
+              <input v-model="mapping.from" type="text" class="input" placeholder="gpt-5.5" />
+              <span class="text-gray-400">→</span>
+              <input v-model="mapping.to" type="text" class="input" placeholder="gpt-5.5-compact" />
+              <button
+                type="button"
+                @click="openAICompactModelMappings.splice(index, 1)"
+                class="text-red-500 hover:text-red-700"
+              >
+                <Icon name="trash" size="sm" />
+              </button>
+            </div>
+          </div>
+          <button
+            type="button"
+            @click="openAICompactModelMappings.push({ from: '', to: '' })"
+            class="btn btn-secondary mt-3 text-sm"
+          >
+            <Icon name="plus" size="sm" />
+            {{ t('admin.accounts.addMapping') }}
+          </button>
+        </div>
+      </div>
+
       <!-- Anthropic API Key 自动透传开关 -->
       <div
         v-if="account?.platform === 'anthropic' && account?.type === 'apikey'"
@@ -1907,6 +1962,8 @@ interface ModelMapping {
   to: string
 }
 
+type OpenAICompactMode = 'auto' | 'force_on' | 'force_off'
+
 interface TempUnschedRuleForm {
   error_code: number | null
   keywords: string
@@ -1932,6 +1989,8 @@ const isBedrockAPIKeyMode = computed(() =>
 const modelMappings = ref<ModelMapping[]>([])
 const modelRestrictionMode = ref<'whitelist' | 'mapping'>('whitelist')
 const allowedModels = ref<string[]>([])
+const openAICompactMode = ref<OpenAICompactMode>('auto')
+const openAICompactModelMappings = ref<ModelMapping[]>([])
 const DEFAULT_POOL_MODE_RETRY_COUNT = 3
 const MAX_POOL_MODE_RETRY_COUNT = 10
 const poolModeEnabled = ref(false)
@@ -1950,6 +2009,7 @@ const tempUnschedEnabled = ref(false)
 const tempUnschedRules = ref<TempUnschedRuleForm[]>([])
 const getModelMappingKey = createStableObjectKeyResolver<ModelMapping>('edit-model-mapping')
 const getAntigravityModelMappingKey = createStableObjectKeyResolver<ModelMapping>('edit-antigravity-model-mapping')
+const getOpenAICompactModelMappingKey = createStableObjectKeyResolver<ModelMapping>('edit-openai-compact-model-mapping')
 const getTempUnschedRuleKey = createStableObjectKeyResolver<TempUnschedRuleForm>('edit-temp-unsched-rule')
 
 const showMixedChannelWarning = ref(false)
@@ -2021,6 +2081,37 @@ const openAIWSModeOptions = computed(() => [
   { value: OPENAI_WS_MODE_CTX_POOL, label: t('admin.accounts.openai.wsModeCtxPool') },
   { value: OPENAI_WS_MODE_PASSTHROUGH, label: t('admin.accounts.openai.wsModePassthrough') }
 ])
+const openAICompactModeOptions = computed(() => [
+  { value: 'auto', label: t('admin.accounts.openai.compactModeAuto') },
+  { value: 'force_on', label: t('admin.accounts.openai.compactModeForceOn') },
+  { value: 'force_off', label: t('admin.accounts.openai.compactModeForceOff') }
+])
+const openAICompactStatusKey = computed(() => {
+  const extra = props.account?.extra as Record<string, unknown> | undefined
+  const mode = typeof extra?.openai_compact_mode === 'string' ? extra.openai_compact_mode : 'auto'
+  if (mode === 'force_on') return 'admin.accounts.openai.compactSupported'
+  if (mode === 'force_off') return 'admin.accounts.openai.compactUnsupported'
+  if (typeof extra?.openai_compact_supported === 'boolean') {
+    return extra.openai_compact_supported
+      ? 'admin.accounts.openai.compactSupported'
+      : 'admin.accounts.openai.compactUnsupported'
+  }
+  return 'admin.accounts.openai.compactUnknown'
+})
+const openAICompactStatusLabel = computed(() => t(openAICompactStatusKey.value))
+const openAICompactStatusClass = computed(() => {
+  const key = openAICompactStatusKey.value
+  if (key.endsWith('compactSupported')) return 'text-green-600 dark:text-green-400'
+  if (key.endsWith('compactUnsupported')) return 'text-red-600 dark:text-red-400'
+  return 'text-gray-500 dark:text-gray-400'
+})
+const openAICompactLastChecked = computed(() => {
+  const extra = props.account?.extra as Record<string, unknown> | undefined
+  const checkedAt = typeof extra?.openai_compact_checked_at === 'string' ? extra.openai_compact_checked_at : ''
+  if (!checkedAt) return ''
+  const date = new Date(checkedAt)
+  return Number.isNaN(date.getTime()) ? checkedAt : date.toLocaleString()
+})
 const openaiResponsesWebSocketV2Mode = computed({
   get: () => {
     if (props.account?.type === 'apikey') {
@@ -2173,6 +2264,8 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   openaiPassthroughEnabled.value = false
   openaiOAuthResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
   openaiAPIKeyResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
+  openAICompactMode.value = 'auto'
+  openAICompactModelMappings.value = []
   codexCLIOnlyEnabled.value = false
   anthropicPassthroughEnabled.value = false
   webSearchEmulationMode.value = 'default'
@@ -2190,6 +2283,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
       fallbackEnabledKeys: ['responses_websockets_v2_enabled', 'openai_ws_enabled'],
       defaultMode: OPENAI_WS_MODE_OFF
     })
+    openAICompactMode.value = (extra?.openai_compact_mode as OpenAICompactMode) || 'auto'
     if (newAccount.type === 'oauth') {
       codexCLIOnlyEnabled.value = extra?.codex_cli_only === true
     }
@@ -2311,6 +2405,13 @@ const syncFormFromAccount = (newAccount: Account | null) => {
       allowedModels.value = []
     }
 
+    if (newAccount.platform === 'openai') {
+      const compactMappings = credentials.compact_model_mapping as Record<string, string> | undefined
+      openAICompactModelMappings.value = compactMappings && typeof compactMappings === 'object'
+        ? Object.entries(compactMappings).map(([from, to]) => ({ from, to }))
+        : []
+    }
+
     // Load pool mode
     poolModeEnabled.value = credentials.pool_mode === true
     poolModeRetryCount.value = normalizePoolModeRetryCount(
@@ -2404,6 +2505,10 @@ const syncFormFromAccount = (newAccount: Account | null) => {
         modelMappings.value = []
         allowedModels.value = []
       }
+      const compactMappings = oauthCredentials.compact_model_mapping as Record<string, string> | undefined
+      openAICompactModelMappings.value = compactMappings && typeof compactMappings === 'object'
+        ? Object.entries(compactMappings).map(([from, to]) => ({ from, to }))
+        : []
     } else {
       modelRestrictionMode.value = 'whitelist'
       modelMappings.value = []
@@ -2897,6 +3002,15 @@ const handleSubmit = async () => {
         newCredentials.model_mapping = currentCredentials.model_mapping
       }
 
+      if (props.account.platform === 'openai') {
+        const compactModelMapping = buildModelMappingObject('mapping', [], openAICompactModelMappings.value)
+        if (compactModelMapping) {
+          newCredentials.compact_model_mapping = compactModelMapping
+        } else {
+          delete newCredentials.compact_model_mapping
+        }
+      }
+
       // Add pool mode if enabled
       if (poolModeEnabled.value) {
         newCredentials.pool_mode = true
@@ -3020,6 +3134,13 @@ const handleSubmit = async () => {
       } else if (currentCredentials.model_mapping) {
         // 透传模式保留现有映射
         newCredentials.model_mapping = currentCredentials.model_mapping
+      }
+
+      const compactModelMapping = buildModelMappingObject('mapping', [], openAICompactModelMappings.value)
+      if (compactModelMapping) {
+        newCredentials.compact_model_mapping = compactModelMapping
+      } else {
+        delete newCredentials.compact_model_mapping
       }
 
       updatePayload.credentials = newCredentials
@@ -3203,6 +3324,12 @@ const handleSubmit = async () => {
         } else {
           delete newExtra.codex_cli_only
         }
+      }
+
+      if (openAICompactMode.value === 'auto') {
+        delete newExtra.openai_compact_mode
+      } else {
+        newExtra.openai_compact_mode = openAICompactMode.value
       }
 
       updatePayload.extra = newExtra

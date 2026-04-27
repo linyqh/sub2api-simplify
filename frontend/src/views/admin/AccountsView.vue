@@ -174,6 +174,13 @@
               >
                 {{ getAntigravityTierLabel(row) }}
               </span>
+              <span
+                v-if="getOpenAICompactLabel(row)"
+                :class="['inline-block rounded px-1.5 py-0.5 text-[10px] font-medium', getOpenAICompactClass(row)]"
+                :title="getOpenAICompactTitle(row)"
+              >
+                {{ getOpenAICompactLabel(row) }}
+              </span>
             </div>
           </template>
           <template #cell-capacity="{ row }">
@@ -907,6 +914,43 @@ function getAntigravityTierClass(row: any): string {
     case 'g1-ultra-tier': return 'bg-purple-100 text-purple-600 dark:bg-purple-900/40 dark:text-purple-300'
     default: return ''
   }
+}
+
+function getOpenAICompactState(row: any): 'supported' | 'unsupported' | 'unknown' | null {
+  if (row.platform !== 'openai') return null
+  const extra = row.extra as Record<string, unknown> | undefined
+  const mode = typeof extra?.openai_compact_mode === 'string' ? extra.openai_compact_mode : 'auto'
+  if (mode === 'force_on') return 'supported'
+  if (mode === 'force_off') return 'unsupported'
+  if (typeof extra?.openai_compact_supported === 'boolean') {
+    return extra.openai_compact_supported ? 'supported' : 'unsupported'
+  }
+  return 'unknown'
+}
+
+function getOpenAICompactLabel(row: any): string | null {
+  switch (getOpenAICompactState(row)) {
+    case 'supported': return t('admin.accounts.openai.compactSupported')
+    case 'unsupported': return t('admin.accounts.openai.compactUnsupported')
+    case 'unknown': return t('admin.accounts.openai.compactUnknown')
+    default: return null
+  }
+}
+
+function getOpenAICompactClass(row: any): string {
+  switch (getOpenAICompactState(row)) {
+    case 'supported': return 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
+    case 'unsupported': return 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
+    case 'unknown': return 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
+    default: return ''
+  }
+}
+
+function getOpenAICompactTitle(row: any): string {
+  const extra = row.extra as Record<string, unknown> | undefined
+  const checkedAt = typeof extra?.openai_compact_checked_at === 'string' ? extra.openai_compact_checked_at : ''
+  if (!checkedAt) return getOpenAICompactLabel(row) || ''
+  return `${getOpenAICompactLabel(row)} | ${t('admin.accounts.openai.compactLastChecked')}: ${formatDateTime(new Date(checkedAt))}`
 }
 
 // All available columns

@@ -179,7 +179,11 @@ export async function toggleStatus(id: number, status: 'active' | 'inactive'): P
  * @param id - Account ID
  * @returns Test result
  */
-export async function testAccount(id: number): Promise<{
+export async function testAccount(id: number, payload?: {
+  model_id?: string
+  prompt?: string
+  mode?: 'default' | 'compact'
+}): Promise<{
   success: boolean
   message: string
   latency_ms?: number
@@ -188,7 +192,7 @@ export async function testAccount(id: number): Promise<{
     success: boolean
     message: string
     latency_ms?: number
-  }>(`/admin/accounts/${id}/test`)
+  }>(`/admin/accounts/${id}/test`, payload)
   return data
 }
 

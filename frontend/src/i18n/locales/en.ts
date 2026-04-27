@@ -2382,6 +2382,19 @@ export default {
         codexCLIOnlyDesc:
           'Only applies to OpenAI OAuth. When enabled, only Codex official client families are allowed; when disabled, the gateway bypasses this restriction and keeps existing behavior.',
         modelRestrictionDisabledByPassthrough: 'Automatic passthrough is enabled: model whitelist/mapping will not take effect.',
+        compactMode: 'Compact mode',
+        compactModeDesc:
+          'Controls whether this account participates in /responses/compact scheduling. Auto follows probe results; Force On allows scheduling; Force Off excludes the account.',
+        compactModeAuto: 'Auto',
+        compactModeForceOn: 'Force On',
+        compactModeForceOff: 'Force Off',
+        compactModelMapping: 'Compact-only model mapping',
+        compactModelMappingDesc:
+          'Only applies to /responses/compact requests. Use this when the upstream compact endpoint needs a special model name.',
+        compactSupported: 'Compact supported',
+        compactUnsupported: 'Compact unsupported',
+        compactUnknown: 'Compact unknown',
+        compactLastChecked: 'Last checked',
       },
       anthropic: {
         apiKeyPassthrough: 'Auto passthrough (auth only)',
@@ -2923,6 +2936,11 @@ export default {
       startingTestForAccount: 'Starting test for account: {name}',
       testAccountTypeLabel: 'Account type: {type}',
       selectTestModel: 'Select Test Model',
+      testMode: 'Test mode',
+      testModeDefault: 'Standard Responses',
+      testModeCompact: 'Compact probe',
+      compactTestHint: 'Compact probe calls /responses/compact and writes the account compact support status back to the account.',
+      openaiCompactProbeMode: 'Mode: OpenAI Compact probe',
       testModel: 'Test model',
       testPrompt: 'Prompt: "hi"',
       geminiImagePromptLabel: 'Image prompt',
